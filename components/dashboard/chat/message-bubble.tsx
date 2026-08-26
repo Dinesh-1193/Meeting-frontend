@@ -3,14 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Check,
   Copy,
   Forward,
   MoreHorizontal,
   Paperclip,
   Pencil,
   Reply,
-  SmilePlus,
   Trash2,
 } from "lucide-react";
 import { deleteMessage, editMessage, toggleReaction } from "@/lib/api";
@@ -19,7 +17,7 @@ import { cn } from "@/lib/utils/cn";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ApiError } from "@/lib/api/client";
 import { CHAT_QUICK_REACTIONS } from "@/types";
-import type { ChatChannelMessage, ChatConversation } from "@/types";
+import type { ChatChannelMessage, ChatConversation, ChatMessagePage } from "@/types";
 import { ForwardMessageModal } from "./forward-message-modal";
 
 function formatFileSize(bytes: number): string {
@@ -28,32 +26,25 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function ActionButton({
-  label,
-  onClick,
-  disabled,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--muted-strong)] transition hover:bg-[var(--hover)] hover:text-[var(--foreground)] disabled:opacity-40"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-    >
-      {children}
-    </button>
-  );
+/** Applies a reaction toggle to a reactions array without waiting on the server. */
+function toggleReactionLocally(
+  reactions: ChatChannelMessage["reactions"],
+  emoji: string,
+  userId: string,
+): ChatChannelMessage["reactions"] {
+  const existing = reactions.find((r) => r.emoji === emoji);
+  if (existing?.userIds.includes(userId)) {
+    const userIds = existing.userIds.filter((id) => id !== userId);
+    return userIds.length
+      ? reactions.map((r) => (r.emoji === emoji ? { ...r, userIds } : r))
+      : reactions.filter((r) => r.emoji !== emoji);
+  }
+  if (existing) {
+    return reactions.map((r) =>
+      r.emoji === emoji ? { ...r, userIds: [...r.userIds, userId] } : r,
+    );
+  }
+  return [...reactions, { emoji, userIds: [userId] }];
 }
 
 export function MessageBubble({
@@ -73,31 +64,25 @@ export function MessageBubble({
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [copied, setCopied] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [forwardOpen, setForwardOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(message.body);
-  const pickerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!pickerOpen && !menuOpen) return;
+    if (!menuOpen) return;
     const onClickAway = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPickerOpen(false);
-      }
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", onClickAway);
     return () => document.removeEventListener("mousedown", onClickAway);
-  }, [pickerOpen, menuOpen]);
+  }, [menuOpen]);
 
   const patchMessageCache = (updated: ChatChannelMessage) => {
-    queryClient.setQueryData<{ messages: ChatChannelMessage[]; nextCursor: string | null } | undefined>(
+    queryClient.setQueryData<ChatMessagePage | undefined>(
       ["chat", "messages", message.channelId],
       (old) => {
         if (!old) return old;
@@ -111,10 +96,19 @@ export function MessageBubble({
 
   const reactMutation = useMutation({
     mutationFn: (emoji: string) => toggleReaction(message.channelId, message.id, emoji),
+    onMutate: (emoji) => {
+      const previous = message.reactions;
+      patchMessageCache({
+        ...message,
+        reactions: toggleReactionLocally(message.reactions, emoji, currentUserId),
+      });
+      return { previous };
+    },
     onSuccess: ({ reactions }) => {
       patchMessageCache({ ...message, reactions });
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown, _emoji, context) => {
+      if (context?.previous) patchMessageCache({ ...message, reactions: context.previous });
       toast({
         variant: "error",
         title: "Reaction failed",
@@ -165,9 +159,7 @@ export function MessageBubble({
     }
     try {
       await navigator.clipboard.writeText(text);
-      setCopied(true);
       toast({ variant: "success", title: "Copied" });
-      setTimeout(() => setCopied(false), 1500);
     } catch {
       toast({ variant: "error", title: "Could not copy" });
     }
@@ -192,6 +184,7 @@ export function MessageBubble({
   }
 
   const canForward = Boolean(message.body.trim());
+  const isPending = message.id.startsWith("temp-");
 
   return (
     <div className={cn("group mb-2 flex flex-col", isMine ? "items-end" : "items-start")}>
@@ -202,7 +195,7 @@ export function MessageBubble({
       ) : null}
 
       <div className={cn("flex max-w-[min(85%,28rem)] items-end gap-1.5", isMine ? "flex-row-reverse" : "flex-row")}>
-        <div className="flex min-w-0 flex-col gap-1.5">
+        <div className={cn("relative flex min-w-0 flex-col gap-1.5", isPending && "opacity-60")}>
           {message.replyTo ? (
             <div
               className="rounded-xl border-l-[3px] px-2.5 py-1.5 text-xs"
@@ -346,128 +339,138 @@ export function MessageBubble({
             </div>
           ) : null}
 
-          {!isEditing ? (
+          {!isEditing && !isPending ? (
             <div
-              ref={pickerRef}
+              ref={menuRef}
               className={cn(
-                "relative flex items-center gap-2",
-                isMine ? "justify-end" : "justify-start",
+                "absolute -top-2.5 z-20 opacity-0 transition group-hover:opacity-100",
+                isMine ? "-left-2.5" : "-right-2.5",
+                menuOpen && "opacity-100",
               )}
             >
-              <div className="ms-chat-actions">
-                <ActionButton label="Reply" onClick={() => onReply(message)}>
-                  <Reply className="h-3.5 w-3.5" />
-                </ActionButton>
-                <ActionButton label="React" onClick={() => setPickerOpen((v) => !v)}>
-                  <SmilePlus className="h-3.5 w-3.5" />
-                </ActionButton>
-                <ActionButton label={copied ? "Copied" : "Copy"} onClick={() => void copy()}>
-                  {copied ? <Check className="h-3.5 w-3.5 text-[var(--success)]" /> : <Copy className="h-3.5 w-3.5" />}
-                </ActionButton>
-                <div className="relative" ref={menuRef}>
-                  <ActionButton label="More" onClick={() => setMenuOpen((v) => !v)}>
-                    <MoreHorizontal className="h-3.5 w-3.5" />
-                  </ActionButton>
-                  {menuOpen ? (
-                    <div
-                      className={cn(
-                        "absolute z-20 min-w-[148px] overflow-hidden rounded-xl border py-1.5 shadow-xl",
-                        isMine ? "right-0" : "left-0",
-                      )}
-                      style={{
-                        top: "100%",
-                        marginTop: 6,
-                        borderColor: "var(--border)",
-                        background: "var(--surface)",
-                        boxShadow: "var(--shadow-soft)",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium hover:bg-[var(--hover)] disabled:opacity-40"
-                        disabled={!canForward}
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setForwardOpen(true);
-                        }}
-                      >
-                        <Forward className="h-3.5 w-3.5" />
-                        Forward
-                      </button>
-                      {isMine && message.body ? (
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium hover:bg-[var(--hover)]"
-                          onClick={() => {
-                            setMenuOpen(false);
-                            setEditValue(message.body);
-                            setIsEditing(true);
-                          }}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          Edit
-                        </button>
-                      ) : null}
-                      {isMine ? (
-                        <>
-                          <div className="my-1 border-t" style={{ borderColor: "var(--border)" }} />
-                          <button
-                            type="button"
-                            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium text-[var(--danger)] hover:bg-[var(--hover)]"
-                            disabled={deleteMutation.isPending}
-                            onClick={() => {
-                              setMenuOpen(false);
-                              if (window.confirm("Delete this message?")) deleteMutation.mutate();
-                            }}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Delete
-                          </button>
-                        </>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
+              <button
+                type="button"
+                aria-label="Message options"
+                onClick={() => setMenuOpen((v) => !v)}
+                className="flex h-6 w-6 items-center justify-center rounded-full border shadow-sm transition hover:scale-105"
+                style={{
+                  borderColor: "var(--border)",
+                  background: "var(--surface)",
+                  color: "var(--muted-strong)",
+                  boxShadow: "var(--shadow-soft)",
+                }}
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </button>
 
-              <span className="ms-text-muted text-[10px] tabular-nums">
-                {formatTime(new Date(message.createdAt))}
-                {message.editedAt ? " · edited" : ""}
-              </span>
-
-              {pickerOpen ? (
+              {menuOpen ? (
                 <div
                   className={cn(
-                    "absolute z-20 flex gap-0.5 rounded-full border px-2 py-1.5 shadow-xl",
+                    "absolute z-20 min-w-[176px] overflow-hidden rounded-xl border py-1.5 shadow-xl",
                     isMine ? "right-0" : "left-0",
                   )}
                   style={{
-                    bottom: "100%",
-                    marginBottom: 8,
+                    top: "100%",
+                    marginTop: 6,
                     borderColor: "var(--border)",
                     background: "var(--surface)",
                     boxShadow: "var(--shadow-soft)",
                   }}
                 >
-                  {CHAT_QUICK_REACTIONS.map((emoji) => (
+                  <div
+                    className="flex items-center justify-around gap-0.5 border-b px-2 py-1.5"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    {CHAT_QUICK_REACTIONS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        className="rounded-full p-1 text-base transition hover:scale-125 hover:bg-[var(--hover)]"
+                        onClick={() => {
+                          reactMutation.mutate(emoji);
+                          setMenuOpen(false);
+                        }}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium hover:bg-[var(--hover)]"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onReply(message);
+                    }}
+                  >
+                    <Reply className="h-3.5 w-3.5" />
+                    Reply
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium hover:bg-[var(--hover)]"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void copy();
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium hover:bg-[var(--hover)] disabled:opacity-40"
+                    disabled={!canForward}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setForwardOpen(true);
+                    }}
+                  >
+                    <Forward className="h-3.5 w-3.5" />
+                    Forward
+                  </button>
+                  {isMine && message.body ? (
                     <button
-                      key={emoji}
                       type="button"
-                      className="rounded-full p-1 text-base transition hover:scale-125 hover:bg-[var(--hover)]"
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium hover:bg-[var(--hover)]"
                       onClick={() => {
-                        reactMutation.mutate(emoji);
-                        setPickerOpen(false);
+                        setMenuOpen(false);
+                        setEditValue(message.body);
+                        setIsEditing(true);
                       }}
                     >
-                      {emoji}
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
                     </button>
-                  ))}
+                  ) : null}
+                  {isMine ? (
+                    <>
+                      <div className="my-1 border-t" style={{ borderColor: "var(--border)" }} />
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium text-[var(--danger)] hover:bg-[var(--hover)]"
+                        disabled={deleteMutation.isPending}
+                        onClick={() => {
+                          setMenuOpen(false);
+                          if (window.confirm("Delete this message?")) deleteMutation.mutate();
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete
+                      </button>
+                    </>
+                  ) : null}
                 </div>
               ) : null}
             </div>
           ) : null}
         </div>
       </div>
+
+      <span className="ms-text-muted mt-0.5 px-1 text-[10px] tabular-nums">
+        {isPending ? "Sending…" : formatTime(new Date(message.createdAt))}
+        {!isPending && message.editedAt ? " · edited" : ""}
+      </span>
 
       <ForwardMessageModal
         open={forwardOpen}

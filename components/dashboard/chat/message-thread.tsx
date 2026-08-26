@@ -16,6 +16,7 @@ import {
   sendTyping,
   uploadChatAttachment,
 } from "@/lib/api";
+import { useAuth } from "@/lib/hooks/use-auth";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ApiError } from "@/lib/api/client";
 import { avatarColorForIdentity } from "@/lib/utils/avatar-color";
@@ -60,6 +61,7 @@ export function MessageThread({
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const hasScrolledInitially = useRef(false);
@@ -170,11 +172,62 @@ export function MessageThread({
       sendChannelMessage(conversation.id, body, {
         replyToMessageId: replyingTo?.id,
       }),
-    onSuccess: (message) => {
-      appendSentMessage(message);
+    onMutate: (body) => {
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const optimisticMessage: ChatChannelMessage = {
+        id: tempId,
+        seq: tempId,
+        channelId: conversation.id,
+        senderId: currentUserId,
+        senderName: user?.name ?? "",
+        body,
+        createdAt: new Date().toISOString(),
+        editedAt: null,
+        deletedAt: null,
+        replyTo: replyingTo
+          ? {
+              id: replyingTo.id,
+              senderId: replyingTo.senderId,
+              senderName: replyingTo.senderName,
+              body: replyingTo.body,
+            }
+          : null,
+        forwardedFromSenderName: null,
+        reactions: [],
+        attachments: [],
+      };
+      queryClient.setQueryData<ChatMessagePage | undefined>(
+        ["chat", "messages", conversation.id],
+        (old) => (old ? { ...old, messages: [...old.messages, optimisticMessage] } : old),
+      );
       setReplyingTo(null);
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+      });
+      return { tempId };
     },
-    onError: (err: unknown) => {
+    onSuccess: (message, _body, context) => {
+      queryClient.setQueryData<ChatMessagePage | undefined>(
+        ["chat", "messages", conversation.id],
+        (old) => {
+          if (!old) return old;
+          const withoutTemp = old.messages.filter((m) => m.id !== context?.tempId);
+          if (withoutTemp.some((m) => m.id === message.id)) {
+            return { ...old, messages: withoutTemp };
+          }
+          return { ...old, messages: [...withoutTemp, message] };
+        },
+      );
+      void queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] });
+    },
+    onError: (err: unknown, _body, context) => {
+      queryClient.setQueryData<ChatMessagePage | undefined>(
+        ["chat", "messages", conversation.id],
+        (old) => {
+          if (!old) return old;
+          return { ...old, messages: old.messages.filter((m) => m.id !== context?.tempId) };
+        },
+      );
       toast({
         variant: "error",
         title: "Message not sent",

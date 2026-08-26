@@ -294,17 +294,6 @@ html.dark body {
     box-shadow: none;
   }
 
-  .ms-chat-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.125rem;
-    border-radius: 9999px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    padding: 0.125rem;
-    box-shadow: var(--shadow-soft);
-  }
-
   .ms-chat-typing-dot {
     width: 0.35rem;
     height: 0.35rem;
