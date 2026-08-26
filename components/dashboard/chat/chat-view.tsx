@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageSquare, MessageSquarePlus, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PageInset } from "../page-inset";
 import { ConversationList } from "./conversation-list";
 import { MessageThread } from "./message-thread";
 import { NewChatModal } from "./new-chat-modal";
@@ -210,99 +209,97 @@ export function ChatView() {
 
   return (
     <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
-      <PageInset className="shrink-0 pb-3 pt-4 md:pt-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="ms-text-heading text-xl font-semibold tracking-tight">Messages</h2>
-            <p className="ms-text-muted mt-0.5 text-sm">Direct chats and group conversations</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {realtimeOk && connectionState === "connected" ? (
-              <span
-                className="hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium sm:inline-flex"
-                style={{
-                  borderColor: "color-mix(in srgb, var(--success) 35%, var(--border))",
-                  background: "color-mix(in srgb, var(--success) 10%, var(--surface))",
-                  color: "var(--success)",
-                }}
+      {showBanner ? (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b px-4 py-2 text-xs"
+          style={{
+            borderColor: "var(--border)",
+            background: "color-mix(in srgb, var(--accent) 8%, var(--surface))",
+            color: "var(--muted-strong)",
+          }}
+        >
+          <WifiOff className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
+          <p className="min-w-0 truncate">
+            {!realtimeOk
+              ? "Realtime chat is not configured. History still loads; live updates may be delayed."
+              : connectionState === "connecting"
+                ? "Connecting to live chat…"
+                : "Live chat disconnected — reconnecting for instant updates."}
+          </p>
+        </div>
+      ) : null}
+
+      <div className="ms-chat-shell min-h-0 w-full flex-1">
+        <ConversationList
+          conversations={conversations}
+          isLoading={conversationsQuery.isLoading}
+          selectedId={selectedChannelId}
+          onSelect={selectChannel}
+          onLeft={(channelId) => {
+            if (selectedChannelId === channelId) setSelectedChannelId(null);
+          }}
+          headerAction={
+            <div className="flex items-center gap-1.5">
+              {realtimeOk && connectionState === "connected" ? (
+                <span
+                  className="hidden items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium sm:inline-flex"
+                  style={{
+                    borderColor: "color-mix(in srgb, var(--success) 35%, var(--border))",
+                    background: "color-mix(in srgb, var(--success) 10%, var(--surface))",
+                    color: "var(--success)",
+                  }}
+                  title="Live"
+                >
+                  <Wifi className="h-2.5 w-2.5" />
+                </span>
+              ) : null}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setNewChatOpen(true)}
+                className="h-7 gap-1 px-2 text-xs"
+                aria-label="New chat"
               >
-                <Wifi className="h-3 w-3" />
-                Live
-              </span>
-            ) : null}
-            <Button size="sm" onClick={() => setNewChatOpen(true)} className="shadow-sm">
+                <MessageSquarePlus className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">New</span>
+              </Button>
+            </div>
+          }
+        />
+
+        {selectedConversation ? (
+          <MessageThread
+            key={selectedConversation.id}
+            conversation={selectedConversation}
+            conversations={conversations}
+            currentUserId={user?.id ?? ""}
+            attachmentsEnabled={statusQuery.data?.attachmentsEnabled ?? false}
+            typingName={typingName}
+          />
+        ) : (
+          <div className="ms-chat-canvas relative flex min-w-0 flex-1 flex-col items-center justify-center px-6 py-12">
+            <div
+              className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border shadow-sm"
+              style={{
+                borderColor: "var(--border)",
+                background: "var(--surface)",
+                color: "var(--accent)",
+              }}
+            >
+              <MessageSquare className="h-7 w-7" strokeWidth={1.75} />
+            </div>
+            <p className="ms-text-heading text-base font-semibold tracking-tight">
+              Pick a conversation
+            </p>
+            <p className="ms-text-muted mt-1.5 max-w-xs text-center text-sm leading-relaxed">
+              Select someone from the list, or start a new chat to begin messaging.
+            </p>
+            <Button size="sm" className="mt-5" onClick={() => setNewChatOpen(true)}>
               <MessageSquarePlus className="h-3.5 w-3.5" />
               New chat
             </Button>
           </div>
-        </div>
-        {showBanner ? (
-          <div
-            className="mt-3 flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs"
-            style={{
-              borderColor: "var(--border)",
-              background: "color-mix(in srgb, var(--accent) 6%, var(--surface))",
-              color: "var(--muted-strong)",
-            }}
-          >
-            <WifiOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
-            <p>
-              {!realtimeOk
-                ? "Realtime chat is not configured (Centrifugo). You can still load history; new messages may not appear live."
-                : connectionState === "connecting"
-                  ? "Connecting to live chat…"
-                  : "Live chat disconnected — messages still save; reconnecting may be needed for instant updates."}
-            </p>
-          </div>
-        ) : null}
-      </PageInset>
-
-      <div className="flex min-h-0 flex-1 px-4 pb-4 sm:px-5 md:px-6 lg:px-8">
-        <div className="ms-chat-shell w-full">
-          <ConversationList
-            conversations={conversations}
-            isLoading={conversationsQuery.isLoading}
-            selectedId={selectedChannelId}
-            onSelect={selectChannel}
-            onLeft={(channelId) => {
-              if (selectedChannelId === channelId) setSelectedChannelId(null);
-            }}
-          />
-
-          {selectedConversation ? (
-            <MessageThread
-              key={selectedConversation.id}
-              conversation={selectedConversation}
-              conversations={conversations}
-              currentUserId={user?.id ?? ""}
-              attachmentsEnabled={statusQuery.data?.attachmentsEnabled ?? false}
-              typingName={typingName}
-            />
-          ) : (
-            <div className="ms-chat-canvas relative flex min-w-0 flex-1 flex-col items-center justify-center px-6 py-12">
-              <div
-                className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border shadow-sm"
-                style={{
-                  borderColor: "var(--border)",
-                  background: "var(--surface)",
-                  color: "var(--accent)",
-                }}
-              >
-                <MessageSquare className="h-7 w-7" strokeWidth={1.75} />
-              </div>
-              <p className="ms-text-heading text-base font-semibold tracking-tight">
-                Pick a conversation
-              </p>
-              <p className="ms-text-muted mt-1.5 max-w-xs text-center text-sm leading-relaxed">
-                Select someone from the list, or start a new chat to begin messaging.
-              </p>
-              <Button size="sm" className="mt-5" onClick={() => setNewChatOpen(true)}>
-                <MessageSquarePlus className="h-3.5 w-3.5" />
-                New chat
-              </Button>
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
       <NewChatModal

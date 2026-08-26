@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Search } from "lucide-react";
 import { EmptyState, LoadingState } from "@/components/ui/states";
 import { ConversationListItem } from "./conversation-list-item";
@@ -12,12 +12,14 @@ export function ConversationList({
   selectedId,
   onSelect,
   onLeft,
+  headerAction,
 }: {
   conversations: ChatConversation[];
   isLoading: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onLeft: (channelId: string) => void;
+  headerAction?: ReactNode;
 }) {
   const [q, setQ] = useState("");
 
@@ -40,9 +42,12 @@ export function ConversationList({
       }}
     >
       <div className="shrink-0 border-b px-3 pb-3 pt-3.5" style={{ borderColor: "var(--border)" }}>
-        <p className="ms-text-heading mb-2.5 px-0.5 text-xs font-semibold uppercase tracking-wider">
-          Conversations
-        </p>
+        <div className="mb-2.5 flex items-center justify-between gap-2 px-0.5">
+          <p className="ms-text-heading text-xs font-semibold uppercase tracking-wider">
+            Conversations
+          </p>
+          {headerAction}
+        </div>
         <div className="relative">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"

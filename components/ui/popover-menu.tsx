@@ -113,11 +113,13 @@ export function PopoverMenuItem({
   onClick,
   disabled,
   danger,
+  className,
 }: {
   children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
+  className?: string;
 }) {
   return (
     <button
@@ -125,8 +127,9 @@ export function PopoverMenuItem({
       role="menuitem"
       disabled={disabled}
       className={cn(
-        "flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition hover:bg-[var(--hover)] disabled:opacity-40",
+        "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition hover:bg-[var(--hover)] disabled:opacity-40",
         danger && "text-[var(--danger)]",
+        className,
       )}
       onClick={onClick}
     >

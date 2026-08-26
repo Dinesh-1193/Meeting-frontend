@@ -254,10 +254,11 @@ html.dark body {
     min-height: 0;
     flex: 1;
     overflow: hidden;
-    border-radius: 1.25rem;
-    border: 1px solid var(--border);
+    border-radius: 0;
+    border: none;
+    border-top: 1px solid var(--border);
     background: var(--surface);
-    box-shadow: var(--shadow-soft);
+    box-shadow: none;
   }
 
   .ms-chat-canvas {

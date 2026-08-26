@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Copy,
@@ -19,6 +19,7 @@ import { ApiError } from "@/lib/api/client";
 import { CHAT_QUICK_REACTIONS } from "@/types";
 import type { ChatChannelMessage, ChatConversation, ChatMessagePage } from "@/types";
 import { ForwardMessageModal } from "./forward-message-modal";
+import { PopoverMenu, PopoverMenuItem } from "@/components/ui/popover-menu";
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -68,18 +69,7 @@ export function MessageBubble({
   const [forwardOpen, setForwardOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(message.body);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onClickAway = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onClickAway);
-    return () => document.removeEventListener("mousedown", onClickAway);
-  }, [menuOpen]);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   const patchMessageCache = (updated: ChatChannelMessage) => {
     queryClient.setQueryData<ChatMessagePage | undefined>(
@@ -340,129 +330,109 @@ export function MessageBubble({
           ) : null}
 
           {!isEditing && !isPending ? (
-            <div
-              ref={menuRef}
-              className={cn(
-                "absolute -top-2.5 z-20 opacity-0 transition group-hover:opacity-100",
-                isMine ? "-left-2.5" : "-right-2.5",
-                menuOpen && "opacity-100",
-              )}
-            >
+            <>
               <button
+                ref={menuButtonRef}
                 type="button"
                 aria-label="Message options"
+                aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((v) => !v)}
-                className="flex h-6 w-6 items-center justify-center rounded-full border shadow-sm transition hover:scale-105"
+                className={cn(
+                  "absolute -top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border opacity-0 shadow-sm transition hover:scale-105 group-hover:opacity-100",
+                  isMine ? "-left-2" : "-right-2",
+                  menuOpen && "opacity-100",
+                )}
                 style={{
                   borderColor: "var(--border)",
                   background: "var(--surface)",
                   color: "var(--muted-strong)",
-                  boxShadow: "var(--shadow-soft)",
                 }}
               >
                 <MoreHorizontal className="h-3.5 w-3.5" />
               </button>
 
-              {menuOpen ? (
-                <div
-                  className={cn(
-                    "absolute z-20 min-w-[176px] overflow-hidden rounded-xl border py-1.5 shadow-xl",
-                    isMine ? "right-0" : "left-0",
-                  )}
-                  style={{
-                    top: "100%",
-                    marginTop: 6,
-                    borderColor: "var(--border)",
-                    background: "var(--surface)",
-                    boxShadow: "var(--shadow-soft)",
-                  }}
-                >
-                  <div
-                    className="flex items-center justify-around gap-0.5 border-b px-2 py-1.5"
-                    style={{ borderColor: "var(--border)" }}
-                  >
-                    {CHAT_QUICK_REACTIONS.map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        className="rounded-full p-1 text-base transition hover:scale-125 hover:bg-[var(--hover)]"
-                        onClick={() => {
-                          reactMutation.mutate(emoji);
-                          setMenuOpen(false);
-                        }}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium hover:bg-[var(--hover)]"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onReply(message);
-                    }}
-                  >
-                    <Reply className="h-3.5 w-3.5" />
-                    Reply
-                  </button>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium hover:bg-[var(--hover)]"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      void copy();
-                    }}
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                    Copy
-                  </button>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium hover:bg-[var(--hover)] disabled:opacity-40"
-                    disabled={!canForward}
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setForwardOpen(true);
-                    }}
-                  >
-                    <Forward className="h-3.5 w-3.5" />
-                    Forward
-                  </button>
-                  {isMine && message.body ? (
+              <PopoverMenu
+                open={menuOpen}
+                onClose={() => setMenuOpen(false)}
+                anchorRef={menuButtonRef}
+                align={isMine ? "end" : "start"}
+                className="!min-w-[148px] !rounded-2xl !py-1"
+              >
+                <div className="flex items-center justify-center gap-0.5 px-1.5 pb-1 pt-0.5">
+                  {CHAT_QUICK_REACTIONS.map((emoji) => (
                     <button
+                      key={emoji}
                       type="button"
-                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium hover:bg-[var(--hover)]"
+                      className="rounded-full p-1 text-[15px] leading-none transition hover:scale-110 hover:bg-[var(--hover)]"
                       onClick={() => {
+                        reactMutation.mutate(emoji);
                         setMenuOpen(false);
-                        setEditValue(message.body);
-                        setIsEditing(true);
                       }}
                     >
-                      <Pencil className="h-3.5 w-3.5" />
-                      Edit
+                      {emoji}
                     </button>
-                  ) : null}
-                  {isMine ? (
-                    <>
-                      <div className="my-1 border-t" style={{ borderColor: "var(--border)" }} />
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium text-[var(--danger)] hover:bg-[var(--hover)]"
-                        disabled={deleteMutation.isPending}
-                        onClick={() => {
-                          setMenuOpen(false);
-                          if (window.confirm("Delete this message?")) deleteMutation.mutate();
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Delete
-                      </button>
-                    </>
-                  ) : null}
+                  ))}
                 </div>
-              ) : null}
-            </div>
+                <div className="mx-1.5 border-t" style={{ borderColor: "var(--border)" }} />
+                <PopoverMenuItem
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onReply(message);
+                  }}
+                >
+                  <Reply className="h-3.5 w-3.5" />
+                  Reply
+                </PopoverMenuItem>
+                <PopoverMenuItem
+                  onClick={() => {
+                    setMenuOpen(false);
+                    void copy();
+                  }}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy
+                </PopoverMenuItem>
+                <PopoverMenuItem
+                  onClick={() => {
+                    if (!canForward) return;
+                    setMenuOpen(false);
+                    setForwardOpen(true);
+                  }}
+                  disabled={!canForward}
+                >
+                  <Forward className="h-3.5 w-3.5" />
+                  Forward
+                </PopoverMenuItem>
+                {isMine && message.body ? (
+                  <PopoverMenuItem
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setEditValue(message.body);
+                      setIsEditing(true);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </PopoverMenuItem>
+                ) : null}
+                {isMine ? (
+                  <>
+                    <div className="mx-1.5 my-0.5 border-t" style={{ borderColor: "var(--border)" }} />
+                    <PopoverMenuItem
+                      danger
+                      disabled={deleteMutation.isPending}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        if (window.confirm("Delete this message?")) deleteMutation.mutate();
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete
+                    </PopoverMenuItem>
+                  </>
+                ) : null}
+              </PopoverMenu>
+            </>
           ) : null}
         </div>
       </div>
