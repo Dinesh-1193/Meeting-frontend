@@ -1,6 +1,6 @@
 import type { ApiErrorBody } from "@/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const TOKEN_KEY = "meeting_access_token";
 const REFRESH_KEY = "meeting_refresh_token";
 

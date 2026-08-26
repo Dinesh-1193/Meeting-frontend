@@ -24,7 +24,7 @@ export function onChatConnectionChange(listener: ConnectionListener): () => void
 export function getChatCentrifuge(): Centrifuge {
   if (client) return client;
   const wsUrl =
-    process.env.NEXT_PUBLIC_CENTRIFUGO_WS_URL ?? "ws://localhost:8000/connection/websocket";
+    process.env.NEXT_PUBLIC_CENTRIFUGO_WS_URL || "ws://localhost:8000/connection/websocket";
   client = new Centrifuge(wsUrl, {
     getToken: async () => (await fetchChatConnectionToken()).token,
   });
